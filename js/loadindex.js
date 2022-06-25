@@ -1,7 +1,6 @@
 // Global Variables
 
 apiurl = "https://2foxz7t1qb.execute-api.ap-southeast-1.amazonaws.com"
-var userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
 
 // Script Starts Below
 document.addEventListener('DOMContentLoaded', function() {
@@ -22,9 +21,9 @@ document.addEventListener('DOMContentLoaded', function() {
   // By default, load results
   var country = "singapore";
   var starttime = "202206041000";
-  var endtime = "202206252000";
+  var endtime = "202206172000";
   // load_results(country, starttime, endtime);
-  load_bets(country, starttime, endtime);
+  load_races(country, starttime, endtime);
   
   document.querySelectorAll('#raceentry').forEach(raceEntry => {
     raceEntry.onclick = function () {
@@ -37,60 +36,46 @@ document.addEventListener('DOMContentLoaded', function() {
 
   });
 
-function load_bets(country, starttime, endtime) {
-  // Generate Human Readable Country Name
-  var countryStr = country.charAt(0).toUpperCase() + country.slice(1);
-  if (country === "newzealand") {
-    countryStr = "New Zealand"
-  }
-
-  // Change Image
-  document.getElementById("banner-main").innerHTML = `<img src="static/banner-${country}.jpeg" width="658px" style="overflow: auto;">`;
-
-  //// Generate Human-Readable Dates
-  // Perform conversion for start date
-  starttime_str = String(starttime);
-  start_year = starttime_str.substring(0,4);
-  start_month = starttime_str.substring(4,6);
-  start_day = starttime_str.substring(6,8);
-  startdate_str = `${start_day}/${start_month}/${start_year}`;
-
-  // Perform conversion for end date
-  endtime_str = String(endtime);
-  end_year = endtime_str.substring(0,4);
-  end_month = endtime_str.substring(4,6);
-  end_day = endtime_str.substring(6,8);
-  enddate_str = `${end_day}/${end_month}/${end_year}`;
-
-  // API Endpoint (Deprecated, use global variable)
-  // var url = "https://2foxz7t1qb.execute-api.ap-southeast-1.amazonaws.com"
-  // Fetch list of emails
-
-  userPool.getCurrentUser().getSession(function(err, session) {
-    console.log(session.getIdToken().getJwtToken());
-    fetch(`${apiurl}/prod/listbets?username=${userPool.getCurrentUser().username}&country=${country}&starttime=${starttime}&endtime=${endtime}`, {
-      method: 'GET', // or 'PUT'
-      headers: {
-          'Authorization': session.getIdToken().getJwtToken(),
-      },
-      })
-    .then(response => response.json())
-    .then(results => {
-      // Print emails
-      // console.log(results);
-      if (Object.keys(results).length === 0) {
-        console.log(results)
-        raceListHeaderHtml = `<div id="racelistheader" style="font-size:16px"><b>You have not made any bets for races in ${countryStr} from ${startdate_str} to ${enddate_str}</b></div>`;
-        document.querySelector('#raceresults').insertAdjacentHTML('afterend',raceListHeaderHtml); 
-      } else {
-        results.reverse().forEach(display_race_link);
-        raceListHeaderHtml = `<div id="racelistheader" style="font-size:16px"><b>List of bets you have made for races in ${countryStr} from ${startdate_str} to ${enddate_str}</b></div>`;
-        document.querySelector('#raceresults').insertAdjacentHTML('afterend',raceListHeaderHtml);  
-      }
-    });
-  })
+function load_races(country, starttime, endtime) {
+// Generate Human Readable Country Name
+var countryStr = country.charAt(0).toUpperCase() + country.slice(1);
+if (country === "newzealand") {
+  countryStr = "New Zealand"
 }
 
+// Change Image
+document.getElementById("banner-main").innerHTML = `<img src="static/banner-${country}.jpeg" width="658px" style="overflow: auto;">`;
+
+//// Generate Human-Readable Dates
+// Perform conversion for start date
+starttime_str = String(starttime);
+start_year = starttime_str.substring(0,4);
+start_month = starttime_str.substring(4,6);
+start_day = starttime_str.substring(6,8);
+startdate_str = `${start_day}/${start_month}/${start_year}`;
+
+// Perform conversion for end date
+endtime_str = String(endtime);
+end_year = endtime_str.substring(0,4);
+end_month = endtime_str.substring(4,6);
+end_day = endtime_str.substring(6,8);
+enddate_str = `${end_day}/${end_month}/${end_year}`;
+
+// API Endpoint (Deprecated, use global variable)
+// var url = "https://2foxz7t1qb.execute-api.ap-southeast-1.amazonaws.com"
+// Fetch list of emails
+fetch(`${apiurl}/prod/listraces?country=${country}&starttime=${starttime}&endtime=${endtime}`)
+.then(response => response.json())
+.then(results => {
+  // Print emails
+  // console.log(results);
+  results.reverse().forEach(display_race_link);
+  // Add header here
+  raceListHeaderHtml = `<div id="racelistheader" style="font-size:16px"><b>Races in ${countryStr} from ${startdate_str} to ${enddate_str}</b></div>`;
+  document.querySelector('#raceresults').insertAdjacentHTML('afterend',raceListHeaderHtml);
+});
+}
+  
 function update_search() {
 document.getElementById("mainracebody").innerHTML = "<div id=\"raceresults\"></div>";
 document.getElementById("mainbody").innerHTML = '<div id="results"></div>';
@@ -105,7 +90,7 @@ var enddatestr = document.getElementById("enddate").value;
 const enddateArray = enddatestr.split("/");
 var endtime = `${enddateArray[2]}${enddateArray[1]}${enddateArray[0]}2359`
 
-load_bets(country, starttime, endtime);
+load_races(country, starttime, endtime);
 }
 
 function load_results(country, date_time) {
@@ -143,7 +128,7 @@ function display_race_link(contents) {
 // var race_row = document.createElement('div');
 // results.className = 'results';
 country = contents.country;
-datetime_str = String(contents.race_datetime);
+datetime_str = String(contents.datetime);
 year = datetime_str.substring(0,4);
 month = datetime_str.substring(4,6);
 day = datetime_str.substring(6,8);

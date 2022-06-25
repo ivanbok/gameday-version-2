@@ -6,26 +6,31 @@ client = boto3.client('dynamodb')
 
 def lambda_handler(event, context):
   country = event["queryStringParameters"]["country"]
-  racedatetime = event["queryStringParameters"]["racedatetime"]
+  starttime = event["queryStringParameters"]["starttime"]
+  endtime = event["queryStringParameters"]["endtime"]
   username = event["queryStringParameters"]["username"]
   
   ## For Testing
-  #country = 'singapore'
-  #race_datetime = '202206241200'
-  #username = "ivan"
+  # country = 'singapore'
+  # starttime = '202206041000'
+  # endtime = '202206302000'
+  # username = "ivan"
   
   ## API Gateway Parameters
-  # country=singapore&starttime=202206041000&endtime=202206052000
+  # country=singapore&starttime=202206041000&endtime=202206302000&username=ivan
   
   data = client.query(
     TableName='gamedaybettingresults',
-    KeyConditionExpression='username = :username AND race_datetime = :race_datetime',
+    KeyConditionExpression='username = :username AND race_datetime BETWEEN :date1 AND :date2',
     ExpressionAttributeValues={
       ':username': {
         'S': username
       },
-      ':race_datetime': {
-        'N': race_datetime
+      ':date1': {
+        'N': starttime
+      },
+      ':date2': {
+        'N': endtime
       },
     }
   )
@@ -36,14 +41,11 @@ def lambda_handler(event, context):
     bet_result = []
     for item in data["Items"]:
         if item["country"]["S"] == country:
+            race_datetime = item["race_datetime"]["N"]
+            race_datetime_str =  str(race_datetime)[6:8] + '/' + str(race_datetime)[4:6] + '/' + str(race_datetime)[0:4]
             bet_result.append({"country": item["country"]["S"], 
-                "race_datetime": item["race_datetime"]["N"], 
-                "country": item["country"]["S"],
-                "bet_amount": item["bet_amount"]["N"],
-                "winnings": item["winnings"]["N"],
-                "bet_type": item["bet_type"]["S"],
-                "bet_value": item["bet_value"]["S"],
-                "result_value": item["result_value"]["S"],
+                "race_datetime": race_datetime,
+                "race_datetime_str": race_datetime_str
             })
     body = json.dumps(bet_result)
 

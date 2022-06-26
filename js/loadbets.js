@@ -5,26 +5,28 @@ var userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
 
 // Script Starts Below
 document.addEventListener('DOMContentLoaded', function() {
+  // By default, load bets
+  var country = "singapore";
+  var starttime = "202206041000";
+  var endtime = "202206252000";
+  
 
   // Check whether user is authenticated
   var userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
   var cognitoUser = userPool.getCurrentUser();
-  console.log("Before")
-  console.log(cognitoUser.username)
-  console.log("After")
   if (cognitoUser !== null) {
-    document.getElementById("loginsection").innerHTML = `<span style="color:white"><b>Welcome, ${cognitoUser.username}!<b></span>  <button type="button" class="btn btn-primary" onclick="window.GameDayApp.logout()">Logout</button>`;
+    document.getElementById("loginsection").innerHTML = `<span style="color:white;padding-right:10px"><b>Welcome, ${cognitoUser.username}!<b></span>  <button type="button" class="btn btn-primary" onclick="window.GameDayApp.logout()">Logout</button>`;
     document.getElementById("loginsection").hidden = false;
+    load_bets(country, starttime, endtime);
   } else {
     document.getElementById("loginsection").hidden = false;
+    document.getElementById("navy-blue-title-header").hidden = true;
+    document.getElementById("main-content").hidden = true;
+    notAuthorizedHtml = '<br><h1>Sorry! You have to be logged in to view this page. </h1>';
+    document.querySelector('#banner-main').insertAdjacentHTML('afterend',notAuthorizedHtml);  
   }
 
-  // By default, load results
-  var country = "singapore";
-  var starttime = "202206041000";
-  var endtime = "202206252000";
-  // load_results(country, starttime, endtime);
-  load_bets(country, starttime, endtime);
+
   
   document.querySelectorAll('#raceentry').forEach(raceEntry => {
     raceEntry.onclick = function () {
@@ -34,7 +36,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
   document.querySelector('#filter').addEventListener('click', () => update_search());
-
   });
 
 function load_bets(country, starttime, endtime) {

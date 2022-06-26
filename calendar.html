@@ -11,6 +11,25 @@
 <link rel="stylesheet" media="all" href="./static/style.css">
 <!-- <script src="js/load.js"></script> -->
 
+<!-- Link to all the important JavaScript Files Here -->
+<script src="js/jquery.min.js"></script>
+<script src="js/bootstrap.min.js"></script>
+<script src="js/amazon-cognito-identity.js"></script>
+<script src="js/apiGateway-js-sdk/lib/axios/dist/axios.standalone.js"></script>
+<script src="js/apiGateway-js-sdk/lib/CryptoJS/rollups/hmac-sha256.js"></script>
+<script src="js/apiGateway-js-sdk/lib/CryptoJS/rollups/sha256.js"></script>
+<script src="js/apiGateway-js-sdk/lib/CryptoJS/components/hmac.js"></script>
+<script src="js/apiGateway-js-sdk/lib/CryptoJS/components/enc-base64.js"></script>
+<script src="js/apiGateway-js-sdk/lib/url-template/url-template.js"></script>
+<script src="js/apiGateway-js-sdk/lib/apiGatewayCore/sigV4Client.js"></script>
+<script src="js/apiGateway-js-sdk/lib/apiGatewayCore/apiGatewayClient.js"></script>
+<script src="js/apiGateway-js-sdk/lib/apiGatewayCore/simpleHttpClient.js"></script>
+<script src="js/apiGateway-js-sdk/lib/apiGatewayCore/utils.js"></script>
+<script src="js/apiGateway-js-sdk/apigClient.js"></script>
+<script src="js/config.js"></script>
+<script src="js/usermanagement.js"></script>
+<script src="js/loadindex.js"></script>
+
 <style>
   table {
     font-family: arial, sans-serif;
@@ -117,14 +136,49 @@
             </ul>
         </nav>
     </div>
-<section id="block-minilogin" data-block-plugin-id="mini_login" class="block block-cms block-mini-login clearfix">
+    <section id="block-minilogin" data-block-plugin-id="mini_login" class="block block-cms block-mini-login clearfix">
   
-    
 
-    <div data-habitat="C1"><div></div></div>
-    <div data-habitat="C1"><div class="loading-overlay hide"></div></div>
+      <div data-habitat="C1"><div class="region region-utility">
+        <button id="left-menu" class="button button--outline region-utility__menu-action region-utility__menu-action--left-sidebar ">
+          <span class="sr-only">Toggle side menu</span></button>
+          <button id="right-menu" class="button button--outline region-utility__menu-action region-utility__menu-action--right-sidebar ">
+            <span class="sr-only">Toggle right side menu</span>
+          </button>
+          <section id="block-bean-mini-account-new" class="block block-bean b-block b-block--no-header clearfix">
+            <div class="entity entity-bean bean-client-side-gadget clearfix"><div class="content">
+              <div class="field field-name-field-client-gadget field-type-obet-client-side-gadgets field-label-hidden">
+                <div class="field-items"><div class="field-item even">
+                  <div data-obet-client-side-gadgets-widget-type="obet_client_side_gadgets_react_js" data-gadget-type="MiniLogin" data-gadget-source="internal" data-options="[]" class="obet-gadget-container minilogin-app">
+                    <div class="mini-login-gadget">
+                      <div class="h-v-align-box h-v-align-box--right">
+                        <div class="h-v-align-box__element">
+                          <div id="loginsection">
+                              <form class="form-inline form-inverse hidden-sm hidden-xs" style="text-align: right;">
+                              <div class="form-group" style="width: 20%;">
+                                <input id="username" autocomplete="off" name="username" type="text" placeholder="Username" maxlength="100" max="" min="" class="form-control input-sm" value="" style="width: 100%;">
+                              </div>
+                              <div class="form-group" style="width: 20%;">
+                                <input id="password" autocomplete="off" name="password" type="password" placeholder="Password" maxlength="100" max="" min="" class="form-control input-sm" value="" style="width: 100%;">
+                              </div>
+                              <div class="form-group">
+                                <button type="button" class="button button--blue-gradient btn btn-default" onclick="window.GameDayApp.login()">Login</button>
+                              </div>
+                              <div class="form-group"><a href="/" class="link--white">Forgot Login?</a></div>
+                              <div class="form-group"><button type="button" class="button button--orange">Sign Up</button>
+                              </div>
+                            </form>
+                          <div class="mini-login__actions visible-xs visible-sm">
+                            <p><button type="button" class="button button--blue-gradient">Login</button>
+                              <button id="account-registration-start" type="button" class="button button--orange">Sign Up</button>
+                            </p></div>
+                          </div>
+                          
+                          </div></div></div></div></div></div></div></div></div></section></div></div>
+      <div data-habitat="C1"><div></div></div>
+      <div data-habitat="C1"><div class="loading-overlay hide"></div></div>
 
-  </section>
+</section>
 
  </div>
             </div>
@@ -147,21 +201,23 @@
                 
 
               <br><ul class="menu nav b-menu b-menu--vertical left-menu horse-racing-function">
-                                    <li class="first leaf b-menu__list-item">
-                                    <a href="/" class="b-menu__menu-link link-external" data-type="external-link">Meeting</a>
+              <br><ul class="menu nav b-menu b-menu--vertical left-menu horse-racing-function">
+                                    <li class="leaf b-menu__list-item">
+                                    <a href="/calendar.html" class="b-menu__menu-link">Meeting</a>
                                         </li>
                                 <li class="leaf b-menu__list-item">
-                                    <a href="/" class="b-menu__menu-link link-external" target="_blank" data-type="external-link">Race Cards</a>
+                                    <a href="/index.html" class="b-menu__menu-link">Race Cards</a>
                                         </li>
                                 <li class="leaf b-menu__list-item">
-                                    <a href="/" class="b-menu__menu-link link-external">Race Results</a>
+                                    <a href="/index.html" class="b-menu__menu-link">Race Results</a>
+                                        </li>
+                                <li class="last leaf b-menu__list-item">
+                                    <a href="/viewbets.html" class="b-menu__menu-link">Your Betting Results</a>
                                         </li>
                                 <li class="last active leaf b-menu__list-item">
                                     <a href="/calendar.html" class="b-menu__menu-link is-active">Race Calendar</a>
                                         </li>
           </ul>
-  
-
 
     </nav>
 
@@ -361,7 +417,7 @@
       <section class="b-content__body__content offcanvas-view">
         <div id="banner-main"><img src="static/calendarbanner.jpeg" width="658px" style="overflow: auto;"></div>
         <br>
-        <h2 class="header-title header-title--navy-blue" style="overflow: auto;">
+        <h2 id="navy-blue-title-header" class="header-title header-title--navy-blue" style="overflow: auto;">
           <span class="horse-racing-event-section-title">Race Calendar</span>
         </h2>
         <div class="pane-content">

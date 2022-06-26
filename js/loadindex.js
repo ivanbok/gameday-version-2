@@ -8,11 +8,8 @@ document.addEventListener('DOMContentLoaded', function() {
   // Check whether user is authenticated
   var userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
   var cognitoUser = userPool.getCurrentUser();
-  console.log("Before")
-  console.log(cognitoUser.username)
-  console.log("After")
   if (cognitoUser !== null) {
-    document.getElementById("loginsection").innerHTML = `<span style="color:white"><b>Welcome, ${cognitoUser.username}!<b></span>  <button type="button" class="btn btn-primary" onclick="window.GameDayApp.logout()">Logout</button>`;
+    document.getElementById("loginsection").innerHTML = `<span style="color:white;padding-right:10px"><b>Welcome, ${cognitoUser.username}!<b></span>  <button type="button" class="btn btn-primary" onclick="window.GameDayApp.logout()">Logout</button>`;
     document.getElementById("loginsection").hidden = false;
   } else {
     document.getElementById("loginsection").hidden = false;

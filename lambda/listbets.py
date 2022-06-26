@@ -8,7 +8,7 @@ def lambda_handler(event, context):
   country = event["queryStringParameters"]["country"]
   starttime = event["queryStringParameters"]["starttime"]
   endtime = event["queryStringParameters"]["endtime"]
-  username = event["queryStringParameters"]["username"]
+  username = event["requestContext"]["authorizer"]["claims"]["cognito:username"]
   
   ## For Testing
   # country = 'singapore'

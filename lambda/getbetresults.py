@@ -6,8 +6,9 @@ client = boto3.client('dynamodb')
 
 def lambda_handler(event, context):
   country = event["queryStringParameters"]["country"]
-  racedatetime = event["queryStringParameters"]["racedatetime"]
-  username = event["queryStringParameters"]["username"]
+  race_datetime = event["queryStringParameters"]["racedatetime"]
+  # username = event["queryStringParameters"]["username"]
+  username = event["requestContext"]["authorizer"]["claims"]["cognito:username"]
   
   ## For Testing
   #country = 'singapore'

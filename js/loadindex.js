@@ -1,6 +1,6 @@
 // Global Variables
 
-apiurl = "https://2foxz7t1qb.execute-api.ap-southeast-1.amazonaws.com"
+// apiurl = "https://2foxz7t1qb.execute-api.ap-southeast-1.amazonaws.com" //Moved to config.js
 
 // Script Starts Below
 document.addEventListener('DOMContentLoaded', function() {

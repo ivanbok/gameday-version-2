@@ -1,6 +1,6 @@
 // Global Variables
 
-apiurl = "https://2foxz7t1qb.execute-api.ap-southeast-1.amazonaws.com"
+// apiurl = "https://2foxz7t1qb.execute-api.ap-southeast-1.amazonaws.com" //Moved to config.js
 var userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
 
 // Script Starts Below
@@ -69,7 +69,7 @@ function load_bets(country, starttime, endtime) {
 
   userPool.getCurrentUser().getSession(function(err, session) {
     console.log(session.getIdToken().getJwtToken());
-    fetch(`${apiurl}/prod/listbets?username=${userPool.getCurrentUser().username}&country=${country}&starttime=${starttime}&endtime=${endtime}`, {
+    fetch(`${apiurl}/prod/listbets?country=${country}&starttime=${starttime}&endtime=${endtime}`, {
       method: 'GET', // or 'PUT'
       headers: {
           'Authorization': session.getIdToken().getJwtToken(),
@@ -136,7 +136,7 @@ document.getElementById("mainbody").innerHTML = `<hr><div id="results" style="fo
 // Fetch Betting Results
 userPool.getCurrentUser().getSession(function(err, session) {
   console.log(session.getIdToken().getJwtToken());
-  fetch(`${apiurl}/prod/betresults?username=${userPool.getCurrentUser().username}&country=${country}&racedatetime=${date_time}`, {
+  fetch(`${apiurl}/prod/betresults?country=${country}&racedatetime=${date_time}`, {
     method: 'GET', // or 'PUT'
     headers: {
         'Authorization': session.getIdToken().getJwtToken(),

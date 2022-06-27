@@ -58,6 +58,8 @@ Resources:
           sudo git clone https://github.com/ivanbok/gameday-version-2.git
           sudo cp -a ./gameday-version-2/. /var/www/html
           sudo sed 's/replacethiswiththeapiurl/${apiGateway}/g' /gameday-version-2/js/config-template.js > /gameday-version-2/js/config.js
+          sudo sed 's/replacethiswiththeuserpoolid/${UserPool}/g' /gameday-version-2/js/config.js > /gameday-version-2/js/config.js
+          sudo sed 's/replacethiswiththeclientid/${UserPoolClient}/g' /gameday-version-2/js/config.js > /gameday-version-2/js/config.js
           cd /
           sudo aws s3 cp gameday-version-2 s3://${S3Bucket} --recursive
           sudo shutdown now
@@ -449,6 +451,157 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/*/GET/raceresults
 
+  # Create Lambda Function to List Bets Made by a Given User
+  ListBetsLambda: 
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.handler"
+      FunctionName: "listbets"
+      Role: 
+        Fn::GetAtt: 
+          - "LambdaDDBExecutionRole"
+          - "Arn"
+      Runtime: "python3.9"
+      Code: 
+        ZipFile: |
+          import json
+          import boto3
+          from boto3.dynamodb.conditions import Key, Attr
+
+          client = boto3.client('dynamodb')
+
+          def handler(event, context):
+            country = event["queryStringParameters"]["country"]
+            starttime = event["queryStringParameters"]["starttime"]
+            endtime = event["queryStringParameters"]["endtime"]
+            username = event["requestContext"]["authorizer"]["claims"]["cognito:username"]
+
+            data = client.query(
+              TableName='gamedaybettingresults',
+              KeyConditionExpression='username = :username AND race_datetime BETWEEN :date1 AND :date2',
+              ExpressionAttributeValues={
+                ':username': {
+                  'S': username
+                },
+                ':date1': {
+                  'N': starttime
+                },
+                ':date2': {
+                  'N': endtime
+                },
+              }
+            )
+            
+            if data["Count"] == 0:
+              body = json.dumps({})
+            else:
+              bet_result = []
+              for item in data["Items"]:
+                  if item["country"]["S"] == country:
+                      race_datetime = item["race_datetime"]["N"]
+                      race_datetime_str =  str(race_datetime)[6:8] + '/' + str(race_datetime)[4:6] + '/' + str(race_datetime)[0:4]
+                      bet_result.append({"country": item["country"]["S"], 
+                          "race_datetime": race_datetime,
+                          "race_datetime_str": race_datetime_str
+                      })
+              body = json.dumps(bet_result)
+
+            response = {
+                'statusCode': 200,
+                'body': body,
+                'headers': {
+                  'Content-Type': 'application/json',
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Headers': '*'
+                },
+            }
+            
+            return response
+  
+  # Create Lambda Permissions Policy for API Gateway to Invoke it
+  ListBetsLambdaAPIGatewayResourcePolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ListBetsLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/*/GET/listbets
+
+  # Create Lambda Function to get Betting Results of a Given Race
+  BettingResultsLambda: 
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.handler"
+      FunctionName: "getbetresults"
+      Role: 
+        Fn::GetAtt: 
+          - "LambdaDDBExecutionRole"
+          - "Arn"
+      Runtime: "python3.9"
+      Code: 
+        ZipFile: |
+          import json
+          import boto3
+          from boto3.dynamodb.conditions import Key, Attr
+
+          client = boto3.client('dynamodb')
+
+          def handler(event, context):
+            country = event["queryStringParameters"]["country"]
+            race_datetime = event["queryStringParameters"]["racedatetime"]
+            # username = event["queryStringParameters"]["username"]
+            username = event["requestContext"]["authorizer"]["claims"]["cognito:username"]
+            
+            data = client.query(
+              TableName='gamedaybettingresults',
+              KeyConditionExpression='username = :username AND race_datetime = :race_datetime',
+              ExpressionAttributeValues={
+                ':username': {
+                  'S': username
+                },
+                ':race_datetime': {
+                  'N': race_datetime
+                },
+              }
+            )
+            
+            if data["Count"] == 0:
+              body = json.dumps({})
+            else:
+              bet_result = []
+              for item in data["Items"]:
+                  if item["country"]["S"] == country:
+                      bet_result.append({"country": item["country"]["S"], 
+                          "race_datetime": item["race_datetime"]["N"], 
+                          "country": item["country"]["S"],
+                          "bet_amount": item["bet_amount"]["N"],
+                          "winnings": item["winnings"]["N"],
+                          "bet_type": item["bet_type"]["S"],
+                          "bet_value": item["bet_value"]["S"],
+                          "result_value": item["result_value"]["S"],
+                      })
+              body = json.dumps(bet_result)
+
+            response = {
+                'statusCode': 200,
+                'body': body,
+                'headers': {
+                  'Content-Type': 'application/json',
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Headers': '*'
+                },
+            }
+            
+            return response
+  # Create Lambda Permissions Policy for API Gateway to Invoke it
+  BettingResultsLambdaAPIGatewayResourcePolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BettingResultsLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/*/GET/betresults
+
   # Create Lambda Function to Generate Mock Racing Data
   GenerateRacingDataLambda: 
     DependsOn: RacingResultsTable
@@ -721,17 +874,126 @@ Resources:
             method.response.header.Access-Control-Allow-Methods: false
             method.response.header.Access-Control-Allow-Origin: false
 
+  ## List Bets API
+  # Create List Bets Resource
+  ApiGatewayListBetsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt apiGateway.RootResourceId
+      PathPart: 'listbets'
+      RestApiId: !Ref apiGateway
+  # Create List Bets Method
+  apiGatewayListBetsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: COGNITO_USER_POOLS
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListBetsLambdaARN}/invocations
+          - ListBetsLambdaARN: !GetAtt ListBetsLambda.Arn
+      ResourceId: !Ref ApiGatewayListBetsResource
+      RestApiId: !Ref apiGateway
+  # Set CORS configuration for OPTIONS Preflight Method for List Bets API call 
+  apiGatewayListBetsCorsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      ResourceId: !Ref ApiGatewayListBetsResource
+      RestApiId: !Ref apiGateway
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+          ResponseTemplates:
+            application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+
+  ## Get Betting Results API
+  # Create Get Betting Results Resource
+  ApiGatewayBetResultsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt apiGateway.RootResourceId
+      PathPart: 'betresults'
+      RestApiId: !Ref apiGateway
+  # Create Get Betting Results Method
+  apiGatewayBetResultsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: COGNITO_USER_POOLS
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BettingResultsLambdaARN}/invocations
+          - BettingResultsLambdaARN: !GetAtt BettingResultsLambda.Arn
+      ResourceId: !Ref ApiGatewayBetResultsResource
+      RestApiId: !Ref apiGateway
+  # Set CORS configuration for OPTIONS Preflight Method for Get Betting Results API call 
+  apiGatewayBetResultsCorsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      ResourceId: !Ref ApiGatewayBetResultsResource
+      RestApiId: !Ref apiGateway
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+          ResponseTemplates:
+            application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+
   # Create Deployment
   apiGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
       - apiGatewayListRacesMethod
       - apiGatewayGetRaceResultMethod
+      - apiGatewayListBetsMethod
+      - apiGatewayBetResultsMethod
     Properties:
       RestApiId: !Ref apiGateway
       StageName: prod
 
-  # Create Custom Resource to Invoke Lambda Function for Injecting Data to DynamoDB
+  ########################################################################
+  # Create Custom Resources ##############################################
+  ########################################################################
+  # Custom Resource to Inject Data to DynamoDB Racing Results Table
   LambdaInvoker:
     DependsOn: GenerateRacingDataLambda
     Type: AWS::Lambda::Function
@@ -837,18 +1099,3 @@ Resources:
     Version: "1.0"
     Properties:
       ServiceToken: !GetAtt LambdaInvoker.Arn
-
-Outputs:
-  WebsiteURL:
-    Value: !GetAtt 
-      - S3Bucket
-      - WebsiteURL
-    Description: URL for website hosted on S3
-  S3BucketSecureURL:
-    Value: !Join 
-      - ''
-      - - 'https://'
-        - !GetAtt 
-          - S3Bucket
-          - DomainName
-    Description: Name of S3 bucket to hold website content

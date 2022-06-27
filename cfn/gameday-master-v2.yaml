@@ -166,9 +166,9 @@ Resources:
       UserPoolId: !Ref UserPool
       AllowedOAuthFlowsUserPoolClient: true
       CallbackURLs:
-        - !Sub ${TheCloudFrontDistribution.DomainName}/index.html # Replace with URL of CloudFront Distribution
+        - !Sub https://${TheCloudFrontDistribution.DomainName}/index.html # Replace with URL of CloudFront Distribution
       LogoutURLs:
-        - !Sub ${TheCloudFrontDistribution.DomainName}/index.html # Replace with URL of CloudFront Distribution
+        - !Sub https://${TheCloudFrontDistribution.DomainName}/index.html # Replace with URL of CloudFront Distribution
       AllowedOAuthFlows:
         - code
         - implicit

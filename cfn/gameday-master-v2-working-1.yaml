@@ -1,0 +1,1103 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  CognitoDomain:
+    Type: String
+    Default: gamedayapp
+    MinLength: 3
+    MaxLength: 63
+    AllowedPattern: ^[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?$
+    Description: Enter a string. Must be alpha numeric 3-63 in length.
+
+Resources:
+  ########################################################################
+  # Create S3 Bucket for Static Website Hosting ##########################
+  ########################################################################
+  S3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      # AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+    DeletionPolicy: Delete
+
+  TheBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Statement:
+          -
+            Action:
+              - s3:GetObject
+            Effect: Allow
+            Resource: !Join [ "", [ "arn:aws:s3:::", !Ref S3Bucket, "/*" ] ]
+            Principal:
+              CanonicalUser: !GetAtt TheCloudFrontOriginAccessIdentity.S3CanonicalUserId
+
+  ########################################################################
+  # Create Temporary EC2 Instance for file upload to S3 ##################
+  ########################################################################
+
+  MyInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: apiGateway
+    Properties:
+      AvailabilityZone: ap-southeast-1a
+      ImageId: ami-0bd6906508e74f692
+      InstanceType: t2.micro
+      SecurityGroups:
+      - !Ref TempServerSecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo yum update -y
+          sudo yum install git -y
+          sudo git clone https://github.com/ivanbok/gameday-version-2.git
+          sudo cp -a ./gameday-version-2/. /var/www/html
+          sudo sed 's/replacethiswiththeapiurl/${apiGateway}/g' /gameday-version-2/js/config-template.js > /gameday-version-2/js/config-template2.js
+          sudo sed 's/replacethiswiththeuserpoolid/${UserPool}/g' /gameday-version-2/js/config-template2.js > /gameday-version-2/js/config-template3.js
+          sudo sed 's/replacethiswiththeclientid/${UserPoolClient}/g' /gameday-version-2/js/config-template3.js > /gameday-version-2/js/config.js
+          cd /
+          sudo aws s3 cp gameday-version-2 s3://${S3Bucket} --recursive
+          sudo shutdown now
+  TempServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Allow SSH and HTTP"
+      SecurityGroupIngress:
+      - CidrIp: 0.0.0.0/0
+        FromPort: 22
+        ToPort: 22
+        IpProtocol: tcp
+      - CidrIp: 0.0.0.0/0
+        FromPort: 80
+        ToPort: 80
+        IpProtocol: tcp
+  
+  EC2InstanceProfile: 
+    Type: "AWS::IAM::InstanceProfile"
+    Properties: 
+      Path: "/"
+      Roles: 
+        - 
+          Ref: "EC2Role"
+  
+  EC2Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: '*'       # Not aligned with security best practices. To refine and reduce allowable actions and resources for testing only
+                Resource: '*'
+
+  ########################################################################
+  # Create CloudFront Distribution #######################################
+  ########################################################################
+
+  TheCloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        DefaultCacheBehavior:
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+          TargetOriginId: origin-s3-bucket
+          ViewerProtocolPolicy: allow-all
+        DefaultRootObject: index.html
+        Enabled: true
+        Origins:
+          - DomainName:
+              !Join [ "", [ !Ref S3Bucket, ".s3.amazonaws.com" ] ]
+            Id: origin-s3-bucket
+            S3OriginConfig:
+              OriginAccessIdentity:
+                !Join [ "", [ "origin-access-identity/cloudfront/", !Ref TheCloudFrontOriginAccessIdentity ] ]
+        PriceClass: 'PriceClass_All'
+
+  TheCloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub 'CloudFront OAI for ${S3Bucket}'
+
+  ########################################################################
+  # Create Cognito User Pools Identity Pool ##############################
+  ########################################################################
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UsernameConfiguration: 
+        CaseSensitive: false
+      AutoVerifiedAttributes:
+        - email
+      UserPoolName: !Sub ${CognitoDomain}-user-pool
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: false
+          Required: true
+        - Name: name
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs:
+        - !Sub https://${TheCloudFrontDistribution.DomainName}/index.html # Replace with URL of CloudFront Distribution
+      LogoutURLs:
+        - !Sub https://${TheCloudFrontDistribution.DomainName}/index.html # Replace with URL of CloudFront Distribution
+      AllowedOAuthFlows:
+        - code
+        - implicit
+      AllowedOAuthScopes:
+        - phone
+        - email
+        - openid
+        - profile
+      SupportedIdentityProviders:
+        - COGNITO
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomain
+      UserPoolId: !Ref UserPool
+
+  ########################################################################
+  ## Create Lambda Functions and Associated IAM Resources ################
+  ########################################################################
+  # Create Lambda Execution Role that allows it to call DynamoDB
+  LambdaDDBExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - "s3:*"
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - "logs:CreateLogGroup"
+            - "logs:CreateLogStream"
+            - "logs:PutLogEvents"
+            Resource: "*"
+      - PolicyName: AmazonDynamoDBFullAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Action:
+            - dynamodb:*
+            - dax:*
+            - application-autoscaling:DeleteScalingPolicy
+            - application-autoscaling:DeregisterScalableTarget
+            - application-autoscaling:DescribeScalableTargets
+            - application-autoscaling:DescribeScalingActivities
+            - application-autoscaling:DescribeScalingPolicies
+            - application-autoscaling:PutScalingPolicy
+            - application-autoscaling:RegisterScalableTarget
+            - cloudwatch:DeleteAlarms
+            - cloudwatch:DescribeAlarmHistory
+            - cloudwatch:DescribeAlarms
+            - cloudwatch:DescribeAlarmsForMetric
+            - cloudwatch:GetMetricStatistics
+            - cloudwatch:ListMetrics
+            - cloudwatch:PutMetricAlarm
+            - cloudwatch:GetMetricData
+            - datapipeline:ActivatePipeline
+            - datapipeline:CreatePipeline
+            - datapipeline:DeletePipeline
+            - datapipeline:DescribeObjects
+            - datapipeline:DescribePipelines
+            - datapipeline:GetPipelineDefinition
+            - datapipeline:ListPipelines
+            - datapipeline:PutPipelineDefinition
+            - datapipeline:QueryObjects
+            - ec2:DescribeVpcs
+            - ec2:DescribeSubnets
+            - ec2:DescribeSecurityGroups
+            - iam:GetRole
+            - iam:ListRoles
+            - kms:DescribeKey
+            - kms:ListAliases
+            - sns:CreateTopic
+            - sns:DeleteTopic
+            - sns:ListSubscriptions
+            - sns:ListSubscriptionsByTopic
+            - sns:ListTopics
+            - sns:Subscribe
+            - sns:Unsubscribe
+            - sns:SetTopicAttributes
+            - lambda:CreateFunction
+            - lambda:ListFunctions
+            - lambda:ListEventSourceMappings
+            - lambda:CreateEventSourceMapping
+            - lambda:DeleteEventSourceMapping
+            - lambda:GetFunctionConfiguration
+            - lambda:DeleteFunction
+            - resource-groups:ListGroups
+            - resource-groups:ListGroupResources
+            - resource-groups:GetGroup
+            - resource-groups:GetGroupQuery
+            - resource-groups:DeleteGroup
+            - resource-groups:CreateGroup
+            - tag:GetResources
+            - kinesis:ListStreams
+            - kinesis:DescribeStream
+            - kinesis:DescribeStreamSummary
+            Effect: Allow
+            Resource: "*"
+          - Action: cloudwatch:GetInsightRuleReport
+            Effect: Allow
+            Resource: arn:aws:cloudwatch:*:*:insight-rule/DynamoDBContributorInsights*
+          - Action:
+            - iam:PassRole
+            Effect: Allow
+            Resource: "*"
+            Condition:
+              StringLike:
+                iam:PassedToService:
+                - application-autoscaling.amazonaws.com
+                - application-autoscaling.amazonaws.com.cn
+                - dax.amazonaws.com
+          - Effect: Allow
+            Action:
+            - iam:CreateServiceLinkedRole
+            Resource: "*"
+            Condition:
+              StringEquals:
+                iam:AWSServiceName:
+                - replication.dynamodb.amazonaws.com
+                - dax.amazonaws.com
+                - dynamodb.application-autoscaling.amazonaws.com
+                - contributorinsights.dynamodb.amazonaws.com
+                - kinesisreplication.dynamodb.amazonaws.com
+
+  # Create Lambda Function to List Races
+  ListRacesLambda: 
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.handler"
+      FunctionName: "listraces"
+      Role: 
+        Fn::GetAtt: 
+          - "LambdaDDBExecutionRole"
+          - "Arn"
+      Runtime: "python3.9"
+      Code: 
+        ZipFile: |
+          import json
+          import boto3
+          from boto3.dynamodb.conditions import Key, Attr
+
+          client = boto3.client('dynamodb')
+
+          def handler(event, context):
+            country = event["queryStringParameters"]["country"]
+            starttime = event["queryStringParameters"]["starttime"]
+            endtime = event["queryStringParameters"]["endtime"]
+            
+            data = client.query(
+              TableName='racingresults',
+              KeyConditionExpression='country = :country AND #dt BETWEEN :date1 AND :date2',
+              ExpressionAttributeValues={
+                ':country': {
+                  'S': country
+                },
+                ':date1': {
+                  'N': starttime
+                },
+                ':date2': {
+                  'N': endtime
+                },
+              },
+              ExpressionAttributeNames={
+                "#dt": "datetime"}
+            )
+            
+            if data["Count"] == 0:
+              body = json.dumps({})
+            else:
+              races = []
+              for item in data["Items"]:
+                  races.append({"country": item["country"]["S"], "datetime": item["datetime"]["N"]})
+              body = json.dumps(races)
+
+            response = {
+                'statusCode': 200,
+                'body': body,
+                'headers': {
+                  'Content-Type': 'application/json',
+                  'Access-Control-Allow-Origin': '*'
+                },
+            }
+            
+            return response
+  # Create Lambda Permissions Policy for API Gateway to Invoke it
+  ListRacesLambdaAPIGatewayResourcePolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ListRacesLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/*/GET/listraces
+
+  # Create Lambda Function to get Results of a Given Race
+  RacingResultsLambda: 
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.handler"
+      FunctionName: "racing-results"
+      Role: 
+        Fn::GetAtt: 
+          - "LambdaDDBExecutionRole"
+          - "Arn"
+      Runtime: "python3.9"
+      Code: 
+        ZipFile: |
+          import json
+          import boto3
+          from boto3.dynamodb.conditions import Key, Attr
+
+          client = boto3.client('dynamodb')
+
+          def handler(event, context):
+            country = event["queryStringParameters"]["country"]
+            date_time = event["queryStringParameters"]["datetime"]
+            
+            data = client.query(
+              TableName='racingresults',
+              KeyConditionExpression='country = :country AND #dt = :date_time',
+              ExpressionAttributeValues={
+                ':country': {
+                  'S': country
+                },
+                ':date_time': {
+                  'N': date_time
+                },
+              },
+              ExpressionAttributeNames={
+                "#dt": "datetime"}
+            )
+            
+            if data["Count"] == 0:
+              body = json.dumps()
+            else:
+              # body = json.dumps(data)
+              num_racers = int(len(data["Items"][0])-2)
+              body_list = []
+              for i in range(1,num_racers+1):
+                body_list.append(winnerstrtodict(data["Items"][0][str(i)]["S"]))
+              body = json.dumps(body_list)
+              # body = data["Items"][0]["1"]["S"]
+            
+            response = {
+                'statusCode': 200,
+                'body': body,
+                'headers': {
+                  'Content-Type': 'application/json',
+                  'Access-Control-Allow-Origin': '*'
+                },
+            }
+            
+            return response
+
+          def winnerstrtodict(stringinput):
+            arr = stringinput.split(",")
+            dictoutput = {"position": arr[0], "driver": arr[1], "team": arr[2], "points": arr[3]}
+            return dictoutput
+  # Create Lambda Permissions Policy for API Gateway to Invoke it
+  RacingResultsLambdaAPIGatewayResourcePolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref RacingResultsLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/*/GET/raceresults
+
+  # Create Lambda Function to List Bets Made by a Given User
+  ListBetsLambda: 
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.handler"
+      FunctionName: "listbets"
+      Role: 
+        Fn::GetAtt: 
+          - "LambdaDDBExecutionRole"
+          - "Arn"
+      Runtime: "python3.9"
+      Code: 
+        ZipFile: |
+          import json
+          import boto3
+          from boto3.dynamodb.conditions import Key, Attr
+
+          client = boto3.client('dynamodb')
+
+          def handler(event, context):
+            country = event["queryStringParameters"]["country"]
+            starttime = event["queryStringParameters"]["starttime"]
+            endtime = event["queryStringParameters"]["endtime"]
+            username = event["requestContext"]["authorizer"]["claims"]["cognito:username"]
+
+            data = client.query(
+              TableName='gamedaybettingresults',
+              KeyConditionExpression='username = :username AND race_datetime BETWEEN :date1 AND :date2',
+              ExpressionAttributeValues={
+                ':username': {
+                  'S': username
+                },
+                ':date1': {
+                  'N': starttime
+                },
+                ':date2': {
+                  'N': endtime
+                },
+              }
+            )
+            
+            if data["Count"] == 0:
+              body = json.dumps({})
+            else:
+              bet_result = []
+              for item in data["Items"]:
+                  if item["country"]["S"] == country:
+                      race_datetime = item["race_datetime"]["N"]
+                      race_datetime_str =  str(race_datetime)[6:8] + '/' + str(race_datetime)[4:6] + '/' + str(race_datetime)[0:4]
+                      bet_result.append({"country": item["country"]["S"], 
+                          "race_datetime": race_datetime,
+                          "race_datetime_str": race_datetime_str
+                      })
+              body = json.dumps(bet_result)
+
+            response = {
+                'statusCode': 200,
+                'body': body,
+                'headers': {
+                  'Content-Type': 'application/json',
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Headers': '*'
+                },
+            }
+            
+            return response
+  
+  # Create Lambda Permissions Policy for API Gateway to Invoke it
+  ListBetsLambdaAPIGatewayResourcePolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ListBetsLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/*/GET/listbets
+
+  # Create Lambda Function to get Betting Results of a Given Race
+  BettingResultsLambda: 
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.handler"
+      FunctionName: "getbetresults"
+      Role: 
+        Fn::GetAtt: 
+          - "LambdaDDBExecutionRole"
+          - "Arn"
+      Runtime: "python3.9"
+      Code: 
+        ZipFile: |
+          import json
+          import boto3
+          from boto3.dynamodb.conditions import Key, Attr
+
+          client = boto3.client('dynamodb')
+
+          def handler(event, context):
+            country = event["queryStringParameters"]["country"]
+            race_datetime = event["queryStringParameters"]["racedatetime"]
+            # username = event["queryStringParameters"]["username"]
+            username = event["requestContext"]["authorizer"]["claims"]["cognito:username"]
+            
+            data = client.query(
+              TableName='gamedaybettingresults',
+              KeyConditionExpression='username = :username AND race_datetime = :race_datetime',
+              ExpressionAttributeValues={
+                ':username': {
+                  'S': username
+                },
+                ':race_datetime': {
+                  'N': race_datetime
+                },
+              }
+            )
+            
+            if data["Count"] == 0:
+              body = json.dumps({})
+            else:
+              bet_result = []
+              for item in data["Items"]:
+                  if item["country"]["S"] == country:
+                      bet_result.append({"country": item["country"]["S"], 
+                          "race_datetime": item["race_datetime"]["N"], 
+                          "country": item["country"]["S"],
+                          "bet_amount": item["bet_amount"]["N"],
+                          "winnings": item["winnings"]["N"],
+                          "bet_type": item["bet_type"]["S"],
+                          "bet_value": item["bet_value"]["S"],
+                          "result_value": item["result_value"]["S"],
+                      })
+              body = json.dumps(bet_result)
+
+            response = {
+                'statusCode': 200,
+                'body': body,
+                'headers': {
+                  'Content-Type': 'application/json',
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Headers': '*'
+                },
+            }
+            
+            return response
+  # Create Lambda Permissions Policy for API Gateway to Invoke it
+  BettingResultsLambdaAPIGatewayResourcePolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BettingResultsLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/*/GET/betresults
+
+  # Create Lambda Function to Generate Mock Racing Data
+  GenerateRacingDataLambda: 
+    DependsOn: RacingResultsTable
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.handler"
+      FunctionName: "generateracingdata"
+      Role: 
+        Fn::GetAtt: 
+          - "LambdaDDBExecutionRole"
+          - "Arn"
+      Runtime: "python3.9"
+      Code: 
+        ZipFile: |
+          import json
+          import math
+          import random
+          import datetime
+
+          import boto3
+
+          client = boto3.client('dynamodb')
+
+          def handler(event, context):
+              datetimelist = range(20220601,20220610)
+              for date_time in datetimelist:
+                  generateresults("singapore", date_time)
+                  generateresults("australia", date_time)
+                  generateresults("new zealand", date_time)
+                  generateresults("thailand", date_time)
+
+              response = {
+                  'statusCode': 200,
+                  'body': 'successfully created item!',
+                  'headers': {
+                      'Content-Type': 'application/json',
+                      'Access-Control-Allow-Origin': '*'
+                  },
+              }
+              return response
+
+          def generateresults(country, date_time):
+              # Generate Results
+              results = generatewinnerlist()
+              
+              #################################
+              ## Build item ###################
+              #################################
+              
+              # Get current datetime and convert to int
+              now = datetime.datetime.now()
+              dt_string = str(date_time) + "1200"
+
+              # Begin building item    
+              item = {"country": {'S': country}, "datetime": {'N': dt_string}}
+              
+              # Load racers
+              count = 1
+              for row in results:
+                  # Each row entry will take the format of "rank,driver,team,score"
+                  # For example: "1,Max Verstappen,Red Bull,125"
+                  row_string = str(count) + ',' + row["driver"] + "," + row["team"] + "," + str(row["score"])
+                  item[str(count)] = {'S': row_string}
+                  count += 1
+              
+              data = client.put_item(
+                  TableName='racingresults',
+                  Item=item)
+
+          def generatewinnerlist():
+              driverlist = [{"driver": "Max Verstappen", "team": "Red Bull"},\
+                  {"driver": "Pierre Gasly", "team": "Alpha Tauri"},\
+                  {"driver": "Sergio Perez", "team": "Red Bull"},\
+                  {"driver": "Felipe Nasr", "team": "Sauber-Ferrari"},\
+                  {"driver": "Fernando Alonso", "team": "Alpine"},\
+                  {"driver": "Charles Leclerc", "team": "Ferrari"},\
+                  {"driver": "Lance Stroll", "team": "Aston Martin"},\
+                  {"driver": "Stoffel Vandoorne", "team": "McLaren"},\
+                  {"driver": "Kevin Magnussen", "team": "Haas"},\
+                  {"driver": "Esteban Gutierrez", "team": "Haas"},\
+                  {"driver": "Yuki Tsunoda", "team": "Alpha Tauri"},\
+                  {"driver": "Alexander Albon", "team": "Williams"},\
+                  {"driver": "Guanyu Zhou", "team": "Alfa Romeo"},\
+                  {"driver": "Daniil Kvyat", "team": "Alpha Tauri"},\
+                  {"driver": "Daniel Ricciardo", "team": "McLaren"}]
+              
+              for driver in driverlist:
+                  driver["score"] = random.randint(0,150)
+              
+              sortedList = sorted(driverlist, key = lambda i: i['score'],reverse=True)
+              results = sortedList[0:10]
+              return results
+
+  # Create DynamoDB Table for Race Results
+  RacingResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - 
+          AttributeName: "country"
+          AttributeType: "S"
+        - 
+          AttributeName: "datetime"
+          AttributeType: "N"
+      BillingMode: PROVISIONED
+      KeySchema: 
+        - 
+          AttributeName: "country"
+          KeyType: "HASH"
+        - 
+          AttributeName: "datetime"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+      TableName: "racingresults"
+
+  # Create DynamoDB Table for Betting Results
+  BettingResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - 
+          AttributeName: "username"
+          AttributeType: "S"
+        - 
+          AttributeName: "race_datetime"
+          AttributeType: "N"
+      BillingMode: PROVISIONED
+      KeySchema: 
+        - 
+          AttributeName: "username"
+          KeyType: "HASH"
+        - 
+          AttributeName: "race_datetime"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "1"
+        WriteCapacityUnits: "1"
+      TableName: "gamedaybettingresults"
+
+  ## Create API Gateway and associated IAM Resources
+  # Create API
+  apiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Description: Example API Gateway
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Name: RacingResultsAPI
+
+  # Add API Gateway Authorizer
+  apiGatewayAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties: 
+      IdentitySource: method.request.header.Authorization
+      Name: Cognito
+      ProviderARNs: 
+        - !GetAtt UserPool.Arn
+      RestApiId: !Ref apiGateway
+      Type: COGNITO_USER_POOLS
+  
+  ## List Races API
+  # Create List Races Resource
+  ApiGatewayListRacesResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt apiGateway.RootResourceId
+      PathPart: 'listraces'
+      RestApiId: !Ref apiGateway
+  # Create List Races Method
+  # Still requires CORS configuration and query string parameters
+  apiGatewayListRacesMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListRacesLambdaARN}/invocations
+          - ListRacesLambdaARN: !GetAtt ListRacesLambda.Arn
+      ResourceId: !Ref ApiGatewayListRacesResource
+      RestApiId: !Ref apiGateway
+  # Set CORS configuration for OPTIONS Preflight Method for Listrace API call 
+  apiGatewayListRacesCorsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      ResourceId: !Ref ApiGatewayListRacesResource
+      RestApiId: !Ref apiGateway
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+          ResponseTemplates:
+            application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+
+  ## Race Results API
+  # Create Race Results Resource
+  ApiGatewayRaceResultsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt apiGateway.RootResourceId
+      PathPart: 'raceresults'
+      RestApiId: !Ref apiGateway
+  # Create Get Race Results Method
+  # Still requires query string parameters
+  apiGatewayGetRaceResultMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RaceResultsLambdaARN}/invocations
+          - RaceResultsLambdaARN: !GetAtt RacingResultsLambda.Arn
+      ResourceId: !Ref ApiGatewayRaceResultsResource
+      RestApiId: !Ref apiGateway
+  
+  # Set CORS configuration for OPTIONS Preflight Method for Race Results
+  apiGatewayGetRaceResultCorsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      RestApiId:
+        Ref: apiGateway
+      ResourceId:
+        Ref: ApiGatewayRaceResultsResource
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+          ResponseTemplates:
+            application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+
+  ## List Bets API
+  # Create List Bets Resource
+  ApiGatewayListBetsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt apiGateway.RootResourceId
+      PathPart: 'listbets'
+      RestApiId: !Ref apiGateway
+  # Create List Bets Method
+  apiGatewayListBetsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref apiGatewayAuthorizer
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListBetsLambdaARN}/invocations
+          - ListBetsLambdaARN: !GetAtt ListBetsLambda.Arn
+      ResourceId: !Ref ApiGatewayListBetsResource
+      RestApiId: !Ref apiGateway
+  # Set CORS configuration for OPTIONS Preflight Method for List Bets API call 
+  apiGatewayListBetsCorsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      ResourceId: !Ref ApiGatewayListBetsResource
+      RestApiId: !Ref apiGateway
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+          ResponseTemplates:
+            application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+
+  ## Get Betting Results API
+  # Create Get Betting Results Resource
+  ApiGatewayBetResultsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt apiGateway.RootResourceId
+      PathPart: 'betresults'
+      RestApiId: !Ref apiGateway
+  # Create Get Betting Results Method
+  apiGatewayBetResultsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref apiGatewayAuthorizer
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BettingResultsLambdaARN}/invocations
+          - BettingResultsLambdaARN: !GetAtt BettingResultsLambda.Arn
+      ResourceId: !Ref ApiGatewayBetResultsResource
+      RestApiId: !Ref apiGateway
+  # Set CORS configuration for OPTIONS Preflight Method for Get Betting Results API call 
+  apiGatewayBetResultsCorsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      ResourceId: !Ref ApiGatewayBetResultsResource
+      RestApiId: !Ref apiGateway
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+          ResponseTemplates:
+            application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+
+  # Create Deployment
+  apiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - apiGatewayListRacesMethod
+      - apiGatewayGetRaceResultMethod
+      - apiGatewayListBetsMethod
+      - apiGatewayBetResultsMethod
+    Properties:
+      RestApiId: !Ref apiGateway
+      StageName: prod
+
+  ########################################################################
+  # Create Custom Resources ##############################################
+  ########################################################################
+  # Custom Resource to Inject Data to DynamoDB Racing Results Table
+  LambdaInvoker:
+    DependsOn: GenerateRacingDataLambda
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: InvokeGenerateRacingDataLambda
+      Description: 'Lambda invoke wrapper for Custom CFN actions'
+      Code:
+        ZipFile: !Sub |
+          import boto3, json
+          import cfnresponse
+
+          def handler(event, context):
+              print('EVENT:')
+              print(event)
+
+              if event['RequestType'] == "Create":
+                lambda_client = boto3.client('lambda')
+                  
+                cfn_event = {}
+
+                lambda_client.invoke(
+                    FunctionName='generateracingdata',
+                    InvocationType='Event',
+                    Payload=json.dumps(cfn_event)
+                )
+
+              responseValue = 120
+              responseData = {}
+              responseData['Data'] = responseValue
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, 
+                responseData, 'scm-cfn-customresource-id')
+
+      Handler: index.handler
+      Role: 
+        Fn::GetAtt: 
+        - "LambdaCustomResourceRole"
+        - "Arn"
+      Runtime: python3.9
+      Timeout: 5
+  
+  LambdaCustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - "s3:*"
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - "logs:CreateLogGroup"
+            - "logs:CreateLogStream"
+            - "logs:PutLogEvents"
+            Resource: "*"
+      - PolicyName: CustomLambdaFullAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Action:
+            - lambda:*
+            Effect: Allow
+            Resource: "*"
+          - Action:
+            - iam:PassRole
+            Effect: Allow
+            Resource: "*"
+            Condition:
+              StringLike:
+                iam:PassedToService:
+                - application-autoscaling.amazonaws.com
+                - application-autoscaling.amazonaws.com.cn
+                - dax.amazonaws.com
+          - Effect: Allow
+            Action:
+            - iam:CreateServiceLinkedRole
+            Resource: "*"
+            Condition:
+              StringEquals:
+                iam:AWSServiceName:
+                - replication.dynamodb.amazonaws.com
+                - dax.amazonaws.com
+                - dynamodb.application-autoscaling.amazonaws.com
+                - contributorinsights.dynamodb.amazonaws.com
+                - kinesisreplication.dynamodb.amazonaws.com
+
+  Primerinvoke:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: LambdaInvoker
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt LambdaInvoker.Arn

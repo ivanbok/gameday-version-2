@@ -59,7 +59,8 @@ Resources:
           sudo cp -a ./gameday-version-2/. /var/www/html
           sudo sed 's/replacethiswiththeapiurl/${apiGateway}/g' /gameday-version-2/js/config-template.js > /gameday-version-2/js/config-template2.js
           sudo sed 's/replacethiswiththeuserpoolid/${UserPool}/g' /gameday-version-2/js/config-template2.js > /gameday-version-2/js/config-template3.js
-          sudo sed 's/replacethiswiththeclientid/${UserPoolClient}/g' /gameday-version-2/js/config-template3.js > /gameday-version-2/js/config.js
+          sudo sed 's/replacethiswiththeclientid/${UserPoolClient}/g' /gameday-version-2/js/config-template3.js > /gameday-version-2/js/config-template4.js
+          sudo sed 's/replacethiswiththecloudfronturl/${TheCloudFrontDistribution.DomainName}/g' /gameday-version-2/js/config-template4.js > /gameday-version-2/js/config.js
           cd /
           sudo aws s3 cp gameday-version-2 s3://${S3Bucket} --recursive
           sudo shutdown now

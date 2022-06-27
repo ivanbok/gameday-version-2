@@ -69,6 +69,10 @@ var GameDayApp = window.GameDayApp || {};
         });
     };
 
+    GameDayApp.register = function () {
+        window.location = `https://gameday-app.auth.ap-southeast-1.amazoncognito.com/signup?client_id=${clientid}&response_type=code&scope=aws.cognito.signin.user.admin+email+openid+phone+profile&redirect_uri=https://${cloudfronturl}/index.html`;        ;
+    };
+
     GameDayApp.confirm = function () {
         var username = location.hash.substring(1);
         var cognitoUser = new AmazonCognitoIdentity.CognitoUser({

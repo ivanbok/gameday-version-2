@@ -49,7 +49,7 @@ var GameDayApp = window.GameDayApp || {};
     GameDayApp.logout = function () {
         var cognitoUser = userPool.getCurrentUser();
         cognitoUser.signOut();
-        window.location = '/';
+        window.location = '/index.html';
     };
 
     GameDayApp.signup = function () {

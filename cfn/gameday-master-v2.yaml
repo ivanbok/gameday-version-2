@@ -150,6 +150,8 @@ Resources:
       AutoVerifiedAttributes:
         - email
       UserPoolName: !Sub ${CognitoDomain}-user-pool
+      LambdaConfig:
+        PostConfirmation: !GetAtt CreateBettingDataLambda.Arn
       Schema:
         - Name: email
           AttributeDataType: String
@@ -695,6 +697,115 @@ Resources:
               results = sortedList[0:10]
               return results
 
+  ########################################################################
+  # Create Lambda for Cognito Trigger ####################################
+  ########################################################################
+  CreateBettingDataLambda: 
+    DependsOn: RacingResultsTable
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.handler"
+      FunctionName: "createbettingdata"
+      Role: 
+        Fn::GetAtt: 
+          - "LambdaDDBExecutionRole"
+          - "Arn"
+      Runtime: "python3.9"
+      Code: 
+        ZipFile: |
+          import json
+          import math
+          import random
+          import datetime
+
+          import boto3
+
+          client = boto3.client('dynamodb')
+
+          def handler(event, context):
+              username = event["userName"]
+              ## For Testing
+              country = 'singapore'
+              starttime = '202206041000'
+              endtime = '202206202000'
+              
+              data = client.query(
+                TableName='racingresults',
+                KeyConditionExpression='country = :country AND #dt BETWEEN :date1 AND :date2',
+                ExpressionAttributeValues={
+                  ':country': {
+                    'S': country
+                  },
+                  ':date1': {
+                    'N': starttime
+                  },
+                  ':date2': {
+                    'N': endtime
+                  },
+                },
+                ExpressionAttributeNames={
+                  "#dt": "datetime"}
+              )
+              
+              if data["Count"] == 0:
+                body = json.dumps({})
+              else:
+                races = []
+                for item in data["Items"]:
+                  races.append({"country": item["country"]["S"], "datetime": item["datetime"]["N"]})
+                  winner_entry = item["1"]["S"]
+                  winner_entry_list = winner_entry.split(',')
+                  winner = winner_entry_list[1] + ", " + winner_entry_list[2]
+                  generatebetentry(username, country, item["datetime"]["N"], winner)
+              body = json.dumps(races)
+
+              response = {
+                  'statusCode': 200,
+                  'body': 'successfully created item!',
+                  'headers': {
+                      'Content-Type': 'application/json',
+                      'Access-Control-Allow-Origin': '*'
+                  },
+              }
+              return event
+
+          def generatebetentry(username, country, race_datetime, winner):
+              #################################
+              ## Build item ###################
+              #################################
+              
+              # Generate bet amount and winnings
+              bet_amount = random.randint(50,200)
+              winnings = bet_amount * 2
+
+              # Begin building item    
+              item = {"country": {'S': country}, 
+                      "username": {'S': username},
+                      "race_datetime": {'N': race_datetime},
+                      "bet_amount": {'N': str(bet_amount)},
+                      "bet_type": {'S': "to-win"},
+                      "bet_value": {'S': winner},
+                      "result_value": {'S': winner},
+                      "winnings": {'N': str(winnings)}
+                      }
+              
+              data = client.put_item(
+                  TableName='gamedaybettingresults',
+                  Item=item)
+
+  # Create Lambda Permissions Policy for Cognito to Invoke it
+  CreateBettingDataLambdaCognitoTriggerResourcePolicy:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CreateBettingDataLambda
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !GetAtt UserPool.Arn
+
+
+  ########################################################################
+  # Create DynamoDB Tables ###############################################
+  ########################################################################
   # Create DynamoDB Table for Race Results
   RacingResultsTable:
     Type: AWS::DynamoDB::Table

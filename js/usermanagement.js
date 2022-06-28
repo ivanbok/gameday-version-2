@@ -70,7 +70,7 @@ var GameDayApp = window.GameDayApp || {};
     };
 
     GameDayApp.register = function () {
-        window.location = `https://gameday-app.auth.ap-southeast-1.amazoncognito.com/signup?client_id=${poolData.ClientId}&response_type=code&scope=email+openid+phone+profile&redirect_uri=https://${cloudfronturl}/index.html`;        ;
+        window.location = `https://${appclientname}.auth.ap-southeast-1.amazoncognito.com/signup?client_id=${poolData.ClientId}&response_type=code&scope=email+openid+phone+profile&redirect_uri=https://${cloudfronturl}/index.html`;        ;
     };
 
     GameDayApp.confirm = function () {

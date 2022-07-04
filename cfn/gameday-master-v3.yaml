@@ -136,13 +136,25 @@ Resources:
             S3OriginConfig:
               OriginAccessIdentity:
                 !Join [ "", [ "origin-access-identity/cloudfront/", !Ref TheCloudFrontOriginAccessIdentity ] ]
-        PriceClass: 'PriceClass_All'
+        Restrictions:
+          - GeoRestriction:
+              Locations:
+                - SG
+              RestrictionType: whitelist
+        PriceClass: 'PriceClass_200'
+
 
   TheCloudFrontOriginAccessIdentity:
     Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
     Properties:
       CloudFrontOriginAccessIdentityConfig:
         Comment: !Sub 'CloudFront OAI for ${S3Bucket}'
+
+  ########################################################################
+  # Create WAF Web ACL ###################################################
+  ########################################################################
+
+
 
   ########################################################################
   # Create Cognito User Pools Identity Pool ##############################

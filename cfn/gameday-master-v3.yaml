@@ -126,7 +126,7 @@ Resources:
           ForwardedValues:
             QueryString: false
           TargetOriginId: origin-s3-bucket
-          ViewerProtocolPolicy: allow-all
+          ViewerProtocolPolicy: redirect-to-https
         DefaultRootObject: index.html
         Enabled: true
         Origins:
@@ -151,10 +151,24 @@ Resources:
         Comment: !Sub 'CloudFront OAI for ${S3Bucket}'
 
   ########################################################################
-  # Create WAF Web ACL ###################################################
+  # Create WAF Web ACL for OWASP Top 10 ##################################
   ########################################################################
 
-
+  # OWASP Top 10
+  OWASPTopTenWebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties: 
+      DefaultAction: 
+        Allow: {}
+      Description: "Applies OWASP Top 10 rules for traffic coming in via CloudFront"
+      Name: GameDayOWASPWebACL
+      Rules: 
+        - Rule
+      Scope: String
+      Tags: 
+        - Tag
+      VisibilityConfig: 
+        VisibilityConfig
 
   ########################################################################
   # Create Cognito User Pools Identity Pool ##############################
@@ -952,7 +966,7 @@ Resources:
           ResponseParameters:
             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
             method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
-            method.response.header.Access-Control-Allow-Origin: "'*'"
+            method.response.header.Access-Control-Allow-Origin: !Sub "'${TheCloudFrontDistribution.DomainName}'"
           ResponseTemplates:
             application/json: ''
         PassthroughBehavior: WHEN_NO_MATCH
@@ -1008,7 +1022,7 @@ Resources:
           ResponseParameters:
             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
             method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
-            method.response.header.Access-Control-Allow-Origin: "'*'"
+            method.response.header.Access-Control-Allow-Origin: !Sub "'${TheCloudFrontDistribution.DomainName}'"
           ResponseTemplates:
             application/json: ''
         PassthroughBehavior: WHEN_NO_MATCH
@@ -1061,7 +1075,7 @@ Resources:
           ResponseParameters:
             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
             method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
-            method.response.header.Access-Control-Allow-Origin: "'*'"
+            method.response.header.Access-Control-Allow-Origin: !Sub "'${TheCloudFrontDistribution.DomainName}'"
           ResponseTemplates:
             application/json: ''
         PassthroughBehavior: WHEN_NO_MATCH
@@ -1114,7 +1128,7 @@ Resources:
           ResponseParameters:
             method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
             method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
-            method.response.header.Access-Control-Allow-Origin: "'*'"
+            method.response.header.Access-Control-Allow-Origin: !Sub "'${TheCloudFrontDistribution.DomainName}'"
           ResponseTemplates:
             application/json: ''
         PassthroughBehavior: WHEN_NO_MATCH

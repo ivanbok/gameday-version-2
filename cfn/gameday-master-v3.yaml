@@ -142,6 +142,7 @@ Resources:
                 - SG
               RestrictionType: whitelist
         PriceClass: 'PriceClass_200'
+        WebACLId: !Ref wafgOwaspACL
 
 
   TheCloudFrontOriginAccessIdentity:

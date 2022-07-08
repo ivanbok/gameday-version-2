@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS WAF Basic OWASP Example Rule Set
+
+## 1.
+## OWASP Top 10 A1
+## Mitigate SQL Injection Attacks
+## Matches attempted SQLi patterns in the URI, QUERY_STRING, BODY, COOKIES
+  wafgSQLiSet:
+    Type: AWS::WAF::SqlInjectionMatchSet
+    Properties:
+      Name: owasp-detect-sqli
+      SqlInjectionMatchTuples:
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: cookie
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: cookie
+          TextTransformation: HTML_ENTITY_DECODE
+  wafgSQLiRule:
+    Type: AWS::WAF::Rule
+    Properties:
+      MetricName: owasp-mitigatesqli
+      Name: owasp-mitigate-sqli
+      Predicates:
+        - Type: SqlInjectionMatch
+          Negated: false
+          DataId: !Ref wafgSQLiSet
+
+## 2.
+## OWASP Top 10 A2
+## Blacklist bad/hijacked JWT tokens or session IDs
+## Matches the specific values in the cookie or Authorization header
+## for JWT it is sufficient to check the signature
+  wafgAuthTokenStringSet:
+    Type: AWS::WAF::ByteMatchSet
+    Properties:
+      Name: !Join ['-', [owasp, 'match-auth-tokens']]
+      ByteMatchTuples:
+        - FieldToMatch:
+            Type: HEADER
+            Data: cookie
+          PositionalConstraint: CONTAINS
+          TargetString: example-session-id
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: authorization
+          PositionalConstraint: ENDS_WITH
+          TargetString: .TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ
+          TextTransformation: URL_DECODE
+  wafgAuthTokenRule:
+    Type: AWS::WAF::Rule
+    Properties:
+      MetricName: owasp-badauthtokens
+      Name: owasp-detect-bad-auth-tokens
+      Predicates:
+        - Type: ByteMatch
+          Negated: false
+          DataId: !Ref wafgAuthTokenStringSet
+
+
+## 3.
+## OWASP Top 10 A3
+## Mitigate Cross Site Scripting Attacks
+## Matches attempted XSS patterns in the URI, QUERY_STRING, BODY, COOKIES
+  wafgXSSSet:
+    Type: AWS::WAF::XssMatchSet
+    Properties:
+      Name: owasp-detect-xss
+      XssMatchTuples:
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: HTML_ENTITY_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: cookie
+          TextTransformation: URL_DECODE
+        - FieldToMatch:
+            Type: HEADER
+            Data: cookie
+          TextTransformation: HTML_ENTITY_DECODE
+  wafgXSSRule:
+    Type: AWS::WAF::Rule
+    Properties:
+      MetricName: owasp-mitigate-xss
+      Name: owasp-mitigate-xss
+      Predicates:
+        - Type: XssMatch
+          Negated: false
+          DataId: !Ref wafgXSSSet
+
+## 7.
+## OWASP Top 10 A7
+## Mitigate abnormal requests via size restrictions
+## Enforce consistent request hygene, limit size of key elements
+  wafgSizeRestrictionSet:
+    Type: AWS::WAF::SizeConstraintSet
+    Properties:
+      Name: owasp-size-restrictions
+      SizeConstraints:
+        - FieldToMatch:
+            Type: URI
+          TextTransformation: NONE
+          ComparisonOperator: GT
+          Size: 512
+        - FieldToMatch:
+            Type: QUERY_STRING
+          TextTransformation: NONE
+          ComparisonOperator: GT
+          Size: 1024
+        - FieldToMatch:
+            Type: BODY
+          TextTransformation: NONE
+          ComparisonOperator: GT
+          Size: 4096
+        - FieldToMatch:
+            Type: HEADER
+            Data: cookie
+          TextTransformation: NONE
+          ComparisonOperator: GT
+          Size: 4093
+  wafgSizeRestrictionRule:
+    Type: AWS::WAF::Rule
+    Properties:
+      MetricName: owasp-restrictsizes
+      Name: owasp-restrictsizes
+      Predicates:
+        - Type: SizeConstraint
+          Negated: false
+          DataId: !Ref wafgSizeRestrictionSet
+
+## --
+## WebACL containing the above rules evaluated in-order
+  wafgOwaspACL:
+    Type: AWS::WAF::WebACL
+    Properties:
+      MetricName: owaspacl
+      Name: owasp-acl
+      DefaultAction:
+        Type: ALLOW
+      Rules:
+        - Action:
+            Type: BLOCK
+          Priority: 10
+          RuleId: !Ref wafgSizeRestrictionRule
+        - Action:
+            Type: BLOCK
+          Priority: 30
+          RuleId: !Ref wafgAuthTokenRule
+        - Action:
+            Type: BLOCK
+          Priority: 40
+          RuleId: !Ref wafgSQLiRule
+        - Action:
+            Type: BLOCK
+          Priority: 50
+          RuleId: !Ref wafgXSSRule

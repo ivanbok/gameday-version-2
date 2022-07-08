@@ -191,7 +191,7 @@ Resources:
   wafgSQLiRule:
     Type: AWS::WAF::Rule
     Properties:
-      MetricName: owasp-mitigatesqli
+      MetricName: !Join ['-', [!Ref AWS::StackName, 'mitigate-sqli']]
       Name: !Join ['-', [!Ref AWS::StackName, 'mitigate-sqli']]
       Predicates:
         - Type: SqlInjectionMatch
@@ -221,7 +221,7 @@ Resources:
   wafgAuthTokenRule:
     Type: AWS::WAF::Rule
     Properties:
-      MetricName: owasp-badauthtokens
+      MetricName: !Join ['-', [!Ref AWS::StackName, 'detect-bad-auth-tokens']]
       Name: !Join ['-', [!Ref AWS::StackName, 'detect-bad-auth-tokens']]
       Predicates:
         - Type: ByteMatch
@@ -265,7 +265,7 @@ Resources:
   wafgXSSRule:
     Type: AWS::WAF::Rule
     Properties:
-      MetricName: owasp-mitigate-xss
+      MetricName: !Join ['-', [!Ref AWS::StackName, 'mitigate-xss']]
       Name: !Join ['-', [!Ref AWS::StackName, 'mitigate-xss']]
       Predicates:
         - Type: XssMatch
@@ -303,7 +303,7 @@ Resources:
   wafgSizeRestrictionRule:
     Type: AWS::WAF::Rule
     Properties:
-      MetricName: owasp-restrictsizes
+      MetricName: !Join ['-', [!Ref AWS::StackName, 'restrictsizes']]
       Name: !Join ['-', [!Ref AWS::StackName, 'restrictsizes']]
       Predicates:
         - Type: SizeConstraint
@@ -314,8 +314,8 @@ Resources:
   wafgOwaspACL:
     Type: AWS::WAF::WebACL
     Properties:
-      MetricName: owaspacl
-      Name: owasp-acl
+      MetricName: !Join ['-', [!Ref AWS::StackName, 'acl']]
+      Name: !Join ['-', [!Ref AWS::StackName, 'acl']]
       DefaultAction:
         Type: ALLOW
       Rules:

@@ -137,10 +137,10 @@ Resources:
               OriginAccessIdentity:
                 !Join [ "", [ "origin-access-identity/cloudfront/", !Ref TheCloudFrontOriginAccessIdentity ] ]
         Restrictions:
-          - GeoRestriction:
-              Locations:
-                - SG
-              RestrictionType: whitelist
+          GeoRestriction:
+            Locations:
+            - SG
+            RestrictionType: whitelist
         PriceClass: 'PriceClass_200'
         WebACLId: !Ref wafgOwaspACL
 

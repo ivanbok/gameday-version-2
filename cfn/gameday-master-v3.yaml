@@ -160,7 +160,7 @@ Resources:
   wafgSQLiSet:
     Type: AWS::WAF::SqlInjectionMatchSet
     Properties:
-      Name: !Join ['-', [!Ref AWS::StackName, 'detect-sqli']]
+      Name: gamedaydetectsqli
       SqlInjectionMatchTuples:
         - FieldToMatch:
             Type: URI
@@ -191,8 +191,8 @@ Resources:
   wafgSQLiRule:
     Type: AWS::WAF::Rule
     Properties:
-      MetricName: !Join ['-', [!Ref AWS::StackName, 'mitigate-sqli']]
-      Name: !Join ['-', [!Ref AWS::StackName, 'mitigate-sqli']]
+      MetricName: 'gamedaymitigate-sqli'
+      Name: 'gamedaymitigatesqli'
       Predicates:
         - Type: SqlInjectionMatch
           Negated: false
@@ -204,7 +204,7 @@ Resources:
   wafgAuthTokenStringSet:
     Type: AWS::WAF::ByteMatchSet
     Properties:
-      Name: !Join ['-', [!Ref AWS::StackName, 'match-auth-tokens']]
+      Name: gamedaymatchauthtokens
       ByteMatchTuples:
         - FieldToMatch:
             Type: HEADER
@@ -221,8 +221,8 @@ Resources:
   wafgAuthTokenRule:
     Type: AWS::WAF::Rule
     Properties:
-      MetricName: !Join ['-', [!Ref AWS::StackName, 'detect-bad-auth-tokens']]
-      Name: !Join ['-', [!Ref AWS::StackName, 'detect-bad-auth-tokens']]
+      MetricName: gamedaydetectbadauthtokens
+      Name: gamedaydetectbadauthtokens
       Predicates:
         - Type: ByteMatch
           Negated: false
@@ -234,7 +234,7 @@ Resources:
   wafgXSSSet:
     Type: AWS::WAF::XssMatchSet
     Properties:
-      Name: !Join ['-', [!Ref AWS::StackName, 'detect-xss']]
+      Name: gamedaydetectxss
       XssMatchTuples:
         - FieldToMatch:
             Type: URI
@@ -265,8 +265,8 @@ Resources:
   wafgXSSRule:
     Type: AWS::WAF::Rule
     Properties:
-      MetricName: !Join ['-', [!Ref AWS::StackName, 'mitigate-xss']]
-      Name: !Join ['-', [!Ref AWS::StackName, 'mitigate-xss']]
+      MetricName: gamedaymitigatexss
+      Name: 'gamedaymitigatexss'
       Predicates:
         - Type: XssMatch
           Negated: false
@@ -277,7 +277,7 @@ Resources:
   wafgSizeRestrictionSet:
     Type: AWS::WAF::SizeConstraintSet
     Properties:
-      Name: !Join ['-', [!Ref AWS::StackName, 'size-restrictions']]
+      Name: 'gamedaysizerestrictions'
       SizeConstraints:
         - FieldToMatch:
             Type: URI
@@ -303,8 +303,8 @@ Resources:
   wafgSizeRestrictionRule:
     Type: AWS::WAF::Rule
     Properties:
-      MetricName: !Join ['-', [!Ref AWS::StackName, 'restrictsizes']]
-      Name: !Join ['-', [!Ref AWS::StackName, 'restrictsizes']]
+      MetricName: 'gamedayrestrictsizes'
+      Name: 'gamedayrestrictsizes'
       Predicates:
         - Type: SizeConstraint
           Negated: false
@@ -314,8 +314,8 @@ Resources:
   wafgOwaspACL:
     Type: AWS::WAF::WebACL
     Properties:
-      MetricName: !Join ['-', [!Ref AWS::StackName, 'acl']]
-      Name: !Join ['-', [!Ref AWS::StackName, 'acl']]
+      MetricName: 'gamedayacl'
+      Name: 'gamedayacl'
       DefaultAction:
         Type: ALLOW
       Rules:

@@ -191,7 +191,7 @@ Resources:
   wafgSQLiRule:
     Type: AWS::WAF::Rule
     Properties:
-      MetricName: 'gamedaymitigate-sqli'
+      MetricName: 'gamedaymitigatesqli'
       Name: 'gamedaymitigatesqli'
       Predicates:
         - Type: SqlInjectionMatch

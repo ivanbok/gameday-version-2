@@ -1203,6 +1203,23 @@ Resources:
         - 
           AttributeName: "race_datetime"
           AttributeType: "N"
+        - 
+          AttributeName: "country"
+          AttributeType: "S"
+      GlobalSecondaryIndexes: 
+        - IndexName: country-race_datetime-index
+          KeySchema: 
+            - 
+              AttributeName: "country"
+              KeyType: "HASH"
+            - 
+              AttributeName: "race_datetime"
+              KeyType: "RANGE"
+          Projection: 
+            ProjectionType: "ALL"
+          ProvisionedThroughput: 
+            ReadCapacityUnits: "1"
+            WriteCapacityUnits: "1"
       BillingMode: PROVISIONED
       KeySchema: 
         - 

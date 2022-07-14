@@ -354,7 +354,7 @@ Resources:
     Properties:
       Description: Invoke Lambda
       State: ENABLED
-      ScheduleExpression: rate(1 hour)
+      ScheduleExpression: rate(1 day)
       Targets:
       - Arn: !GetAtt AggregationReportsLambda.Arn
         Id: cloudwatchRuleInvokeLambdaACC

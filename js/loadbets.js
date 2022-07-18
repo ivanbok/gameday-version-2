@@ -7,8 +7,8 @@ var userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
 document.addEventListener('DOMContentLoaded', function() {
   // By default, load bets
   var country = "singapore";
-  var starttime = "202206041000";
-  var endtime = "202206252000";
+  var starttime = "202207010000";
+  var endtime = "202207212000";
   
 
   // Check whether user is authenticated
